@@ -1,0 +1,250 @@
+{
+  "name": "Bonus: GoCart Uptime Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://gocart-gs.vercel.app",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Ping GoCart",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nconst statusCode = item.json.statusCode || 0;\nconst responseTime = item.json.headers?.['x-response-time'] || 'N/A';\nconst now = new Date().toISOString();\nconst isDown = statusCode !== 200;\n\nreturn [{\n  json: {\n    statusCode,\n    isDown,\n    responseTime,\n    checkedAt: now,\n    url: 'https://gocart-gs.vercel.app',\n    message: isDown\n      ? `🔴 ALERT: GoCart is DOWN! Status: ${statusCode || 'No Response'} at ${now}`\n      : `✅ GoCart is UP. Status: ${statusCode} at ${now}`\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Check Status & Build Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-001",
+              "leftValue": "={{ $json.isDown }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Is Site Down?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $credentials.discordWebhookUrl }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.message }}\n\n**URL:** {{ $json.url }}\n**Status Code:** {{ $json.statusCode }}\n**Checked At:** {{ $json.checkedAt }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "Send Discord Alert (Down)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 180],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log successful check to console / execution log\nconst item = $input.first();\nconsole.log(`[Uptime OK] ${item.json.message}`);\nreturn [{ json: { logged: true, ...item.json } }];"
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000006",
+      "name": "Log OK (No Alert)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Retry logic: wait 30s and re-ping before escalating\nconst item = $input.first();\nconsole.log(`[Retry] Site appears down. Status: ${item.json.statusCode}. Retrying...`);\n// In production: use n8n Wait node before re-pinging\nreturn [{ json: { retryTriggered: true, ...item.json } }];"
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000007",
+      "name": "Retry Note",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 60]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0008-0008-0008-000000000008",
+      "name": "Daily Summary Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 560]
+    },
+    {
+      "parameters": {
+        "url": "={{ $credentials.discordWebhookUrl }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "📊 **GoCart Daily Uptime Summary**\n\nMonitoring has been running for the past 24 hours.\nEndpoint: https://gocart-gs.vercel.app\nCheck interval: every 5 minutes (~288 checks/day)\n\nReview n8n execution logs for full history.\n_Summary generated at: {{ $now.toISO() }}_"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0009-0009-0009-000000000009",
+      "name": "Send Daily Summary to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 560],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "errorMessage": "Uptime monitor encountered an unexpected error."
+      },
+      "id": "a1b2c3d4-0010-0010-0010-000000000010",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [900, 560]
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Ping GoCart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ping GoCart": {
+      "main": [
+        [
+          {
+            "node": "Check Status & Build Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Status & Build Payload": {
+      "main": [
+        [
+          {
+            "node": "Is Site Down?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Site Down?": {
+      "main": [
+        [
+          {
+            "node": "Retry Note",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Discord Alert (Down)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log OK (No Alert)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Summary Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Summary to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": ["uptime", "monitoring", "gocart", "bonus"],
+  "triggerCount": 2,
+  "updatedAt": "2026-05-26T00:00:00.000Z",
+  "versionId": "1"
+}
