@@ -1,41 +1,60 @@
-# Automation & QA Developer — Take-Home Assessment
+# Bonus: GoCart Uptime Monitor — n8n Workflow
 
-## Task 1: Web App QA Report
+## Overview
+This n8n workflow pings the GoCart live deployment every **5 minutes**, checks the HTTP status code, and sends a **Discord alert** if the site is down. A **daily summary** is also posted every 24 hours.
 
-### Application Tested
-**GoCart** — an open-source multi-vendor e-commerce platform built with Next.js, Tailwind CSS, Redux Toolkit, and Prisma (PostgreSQL). It supports customer storefronts, vendor dashboards, and an admin panel.
+---
 
-### Methodology
-Static code review of the full source code (`gocart-main`). All major user flows were traced through the codebase:
-- Customer: browse products, add to cart, apply coupon, place order, manage addresses
-- Seller: register store, add/manage products, view orders and dashboard
-- Admin: manage coupons, approve stores
+## Workflow Structure
 
-Each component and page handler was inspected for missing logic, unimplemented stubs, broken state management, and security/UX gaps.
+```
+[Every 5 Min Trigger]
+        ↓
+  [Ping GoCart]          ← continueOnFail: true (won't crash on timeout)
+        ↓
+[Check Status & Build Payload]   ← Code node: extracts statusCode, builds message
+        ↓
+   [Is Site Down?]       ← IF node: statusCode !== 200
+      ↙       ↘
+[Retry Note] [Send Discord Alert]     [Log OK (no alert)]
 
-### Summary of Findings
+[Daily Summary Trigger] → [Send Daily Summary to Discord]
+```
 
-| Severity | Count |
-|----------|-------|
-| Critical | 5 |
-| High     | 2 |
-| Medium   | 3 |
-| **Total**| **10** |
+---
 
-**Top issues identified:**
-- Place Order button has no backend logic — silently redirects without saving anything
-- Coupon Apply button is a stub — no validation or discount applied
-- Add Address modal discards all input on submit
-- Store registration and Add Product forms never send data to the backend
-- Login button has no auth integration — completely non-functional
+## Features
 
-### Root-Cause Analysis
-Deep-dive performed on Bug #1 (Place Order). The `handlePlaceOrder()` function in `OrderSummary.jsx` is an empty stub wrapped in `toast.promise`, which masks the absence of any real logic. No order data is assembled, no API call is made, and the Redux cart is never cleared. Full fix steps documented in the report.
+| Feature | Detail |
+|---|---|
+| **Trigger** | Schedule — every 5 minutes |
+| **Target URL** | https://gocart-gs.vercel.app |
+| **Down detection** | HTTP status ≠ 200 OR no response (timeout) |
+| **Alert channel** | Discord webhook |
+| **Retry logic** | `continueOnFail: true` on HTTP node prevents silent crash; Retry Note node logs the event before alerting |
+| **Daily summary** | Second schedule trigger fires every 24h and posts a summary to Discord |
+| **Error handling** | `continueOnFail` on all HTTP nodes; Error Handler node for unexpected failures |
 
-### Tools Used
-- **VS Code** — source code review
-- **Claude AI** — assisted in structured analysis and report generation
-- **docx (npm)** — report compiled as a formatted Word document
+---
 
-### Deliverable
-`Task1_QA_Report.docx` — contains the full bug table (10 issues) and root-cause analysis.
+## How the Error Path Works
+
+- The **Ping GoCart** node has `continueOnFail: true` — if the site times out or DNS fails, execution continues rather than stopping silently.
+- The **Check Status & Build Payload** Code node reads `statusCode` from the response. If the ping failed entirely, `statusCode` defaults to `0`, which triggers the "down" branch.
+- The **Is Site Down?** IF node routes to the alert path for any status other than `200`.
+- Discord alerts include the status code, URL, and timestamp so the on-call person has immediate context.
+
+---
+
+## Setup Instructions
+
+1. Import `Bonus_UptimeMonitor.json` into your n8n instance via **Workflows → Import**.
+2. Create a Discord webhook in your server: **Server Settings → Integrations → Webhooks → New Webhook → Copy URL**.
+3. In n8n, add a **Credential** of type `Header Auth` (or plain string) and paste the webhook URL.
+4. Update the two **Send Discord** nodes to reference your credential.
+5. Activate the workflow — it will begin pinging every 5 minutes automatically.
+
+---
+
+## Credentials
+- **Discord Webhook URL** — stored in n8n Credentials store, never hardcoded in the workflow.
